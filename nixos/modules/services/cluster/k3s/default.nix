@@ -163,7 +163,7 @@ in
         LimitCORE = "infinity";
         TasksMax = "infinity";
         EnvironmentFile = cfg.environmentFile;
-        ExecStart = concatStringsSep " \\\n " (
+        ExecStart = concatStrings["/bin/sh -c '" concatStringsSep " \\\n " (
           [
             "${cfg.package}/bin/k3s ${cfg.role}"
           ]
@@ -174,6 +174,7 @@ in
           ++ (optional (cfg.tokenFile != null) "--token-file ${cfg.tokenFile}")
           ++ (optional (cfg.configPath != null) "--config ${cfg.configPath}")
           ++ [ cfg.extraFlags ]
+          "'"]
         );
       };
     };
