@@ -5,6 +5,24 @@ let
   cfg = config.services.k3s;
   removeOption = config: instruction:
     lib.mkRemovedOptionModule ([ "services" "k3s" ] ++ config) instruction;
+
+  k3sExecStartBase = "${cfg.package}/bin/k3s ${cfg.role}";
+  optionalParams = concatStringsSep " \\\n " (
+    (optional cfg.clusterInit "--cluster-init")
+    ++ (optional cfg.disableAgent "--disable-agent")
+    ++ (optional (cfg.serverAddr != "") "--server ${cfg.serverAddr}")
+    ++ (optional (cfg.token != "") "--token ${cfg.token}")
+    ++ (optional (cfg.tokenFile != null) "--token-file ${cfg.tokenFile}")
+    ++ (optional (cfg.configPath != null) "--config ${cfg.configPath}")
+    ++ [ cfg.extraFlags ]);
+  execStartScript = if cfg.useServiceShell then
+    #pkgs.writeShellScript "start-k3s" ''
+    #  ${k3sExecStartBase} ${optionalParams}
+    #''
+    "${pkgs.bash}/bin/bash -c '${k3sExecStartBase} ${optionalParams}'"
+  else
+    "${k3sExecStartBase} ${optionalParams}";
+
 in
 {
   imports = [
@@ -119,6 +137,18 @@ in
       default = null;
       description = lib.mdDoc "File path containing the k3s YAML config. This is useful when the config is generated (for example on boot).";
     };
+
+    useServiceShell = mkOption {
+      type = types.bool;
+      default = false;
+      description = lib.mdDoc "Allow the service to run in a shell, can be useful for running bash inside extraFlags e.g --external-ip $(dig +short kube-node.com).";
+    };
+
+    extraServiceDeps = mkOption {
+      type = types.bool;
+      default = false;
+      description = lib.mdDoc "Allow the service to run in a shell, can be useful for running bash inside extraFlags e.g --external-ip $(dig +short kube-node.com).";
+    };
   };
 
   # implementation
@@ -143,39 +173,34 @@ in
       }
     ];
 
-    environment.systemPackages = [ config.services.k3s.package ];
+    environment.systemPackages = [
+      config.services.k3s.package
+    ] ++ optional cfg.useServiceShell pkgs.dig;
 
     systemd.services.k3s = {
       description = "k3s service";
-      after = [ "firewall.service" "network-online.target" ];
-      wants = [ "firewall.service" "network-online.target" ];
+      after = [ "firewall.service" "network-online.target" ] ++ ["inadyn_public.service" "inadyn_private.service"]; # make those args configurable
+      wants = [ "firewall.service" "network-online.target" ] ++ ["inadyn_public.service" "inadyn_private.service"];
       wantedBy = [ "multi-user.target" ];
-      path = optional config.boot.zfs.enabled config.boot.zfs.package;
+      path = [
+        pkgs.dig
+      ];
       serviceConfig = {
         # See: https://github.com/rancher/k3s/blob/dddbd16305284ae4bd14c0aade892412310d7edc/install.sh#L197
         Type = if cfg.role == "agent" then "exec" else "notify";
         KillMode = "process";
         Delegate = "yes";
         Restart = "always";
+        #https://github.com/k3s-io/k3s/issues/1381#issuecomment-1220219450
+        ExecStartPre="${pkgs.bash}/bin/bash -c 'kubectl -n kube-system delete secrets/k3s-serving || mv /var/lib/rancher/k3s/server/tls/dynamic-cert.json /tmp/dynamic-cert.json'";
         RestartSec = "5s";
         LimitNOFILE = 1048576;
         LimitNPROC = "infinity";
         LimitCORE = "infinity";
         TasksMax = "infinity";
         EnvironmentFile = cfg.environmentFile;
-        ExecStart = concatStrings["/bin/sh -c '" concatStringsSep " \\\n " (
-          [
-            "${cfg.package}/bin/k3s ${cfg.role}"
-          ]
-          ++ (optional cfg.clusterInit "--cluster-init")
-          ++ (optional cfg.disableAgent "--disable-agent")
-          ++ (optional (cfg.serverAddr != "") "--server ${cfg.serverAddr}")
-          ++ (optional (cfg.token != "") "--token ${cfg.token}")
-          ++ (optional (cfg.tokenFile != null) "--token-file ${cfg.tokenFile}")
-          ++ (optional (cfg.configPath != null) "--config ${cfg.configPath}")
-          ++ [ cfg.extraFlags ]
-          "'"]
-        );
+        ExecStart = execStartScript;
+        TimeoutSec=900;
       };
     };
   };
