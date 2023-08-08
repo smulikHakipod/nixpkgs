@@ -192,7 +192,7 @@ in
         Delegate = "yes";
         Restart = "always";
         #https://github.com/k3s-io/k3s/issues/1381#issuecomment-1220219450
-        ExecStartPre="${pkgs.bash}/bin/bash -c 'command -v kubectl && kubectl -n kube-system get secrets/k3s-serving && kubectl -n kube-system delete secrets/k3s-serving || ( [ -f /var/lib/rancher/k3s/server/tls/dynamic-cert.json ] && mv /var/lib/rancher/k3s/server/tls/dynamic-cert.json /tmp/dynamic-cert.json || echo "Neither kubectl secret found nor file exists" )'"
+        ExecStartPre="${pkgs.bash}/bin/bash -c 'command -v kubectl && kubectl -n kube-system get secrets/k3s-serving && kubectl -n kube-system delete secrets/k3s-serving || ( [ -f /var/lib/rancher/k3s/server/tls/dynamic-cert.json ] && mv /var/lib/rancher/k3s/server/tls/dynamic-cert.json /tmp/dynamic-cert.json || echo "Neither kubectl secret found nor file exists" )'";
         RestartSec = "5s";
         LimitNOFILE = 1048576;
         LimitNPROC = "infinity";
